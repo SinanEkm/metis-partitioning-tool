@@ -6,11 +6,11 @@
 #include <cstring>
 #include <fstream>
 #include <ios>
-#include <malloc/_malloc.h>
 #include <metis.h>
 #include <iostream>
 #include <string>
 #include <vector>
+
 // Install metis from:
 // http://glaros.dtc.umn.edu/gkhome/fetch/sw/metis/metis-5.1.0.tar.gz
 
@@ -18,7 +18,9 @@
 // g++ metis.cpp -lmetis -o run -std=c++11
 //
 // Run with
-// ./run -i path/to/MMfile.mtx -k <PART NUMBER>
+// ./run -i path/to/MMfile.mtx -k <PART NUMBER> -o <OBJ_TYPE>
+// OBJ_TYPE -> edge-cut for edge cut minimization
+//          -> volume for Total communication volume minimization
 
 std::string returnFileName(std::string filePath);
 
@@ -29,7 +31,8 @@ int main(int argc, char *argv[]){
 
     std::string filePath = "";
     idx_t nParts = 2; 
-
+    int objective = 1;
+    std::string objective_name = "";
     //Reading the input arguments, specifically matrix name and part number.
     if(argc < 2){
         fprintf(stderr, "Usage: ./run -i [MatrixMarket File path] -k [Partition Number]\nExample: ./run -i matrices/Stanford/Stanford.mtx -k 4\n");
@@ -39,9 +42,20 @@ int main(int argc, char *argv[]){
         for(int j = 0; j < arguments.size(); j++){
             if(arguments[j] == "-i"){
                 filePath += arguments[j+1];
+                continue;
              }
             if(arguments[j] == "-k"){
                 nParts = (idx_t)std::stoi(arguments[j+1]);
+                continue;
+            }
+            if(arguments[j] == "-o"){
+                if(arguments[j+1] == "edge-cut"){
+                    objective = 1;
+                    objective_name += "edge-cut";
+                }else if(arguments[j+1] == "volume"){
+                    objective = 2;
+                    objective_name += "volume";
+                }
             }
         }
     }
@@ -54,11 +68,8 @@ int main(int argc, char *argv[]){
     idx_t numOfRow, numOfCol = 0, numOfVal = 0;
 
     nVertices = &numOfRow;
-     
-    idx_t *I, *J;
-    double *val;
-    idx_t *csr_col, *csr_row;
-    double *csr_val;
+    
+    idx_t *part;
     
     //reading the matrix market file; I, J and, val pointers used to store values. 
     std::ifstream file(filePath);
@@ -66,22 +77,21 @@ int main(int argc, char *argv[]){
     while(file.peek() == '%') file.ignore(2048, '\n');
 
     file >> numOfRow >> numOfCol >> numOfVal;
-     
-    I = (idx_t *)malloc(numOfVal * sizeof(idx_t));
-    J = (idx_t *)malloc(numOfVal * sizeof(idx_t));
-    val = (double *)malloc(numOfVal * sizeof(double));
 
+    idx_t* I = new idx_t[numOfVal]();
+    idx_t* J = new idx_t[numOfVal]();
+    double* val = new double[numOfVal]();
+    
     for (idx_t i = 0; i < numOfVal; i++) {
         file>> I[i] >> J[i] >> val[i];
         I[i]--;
         J[i]--;
     }
     file.close();
-    
-    csr_col = (idx_t *)malloc(numOfVal * sizeof(idx_t));
-    csr_val = (double *)malloc(numOfVal * sizeof(double));
-    csr_row = (idx_t *)malloc((numOfRow + 2) * sizeof(idx_t));
-    
+
+    idx_t* csr_col = new idx_t[numOfVal]();
+    idx_t* csr_val = new idx_t[numOfVal]();
+    idx_t* csr_row = new idx_t[numOfRow + 2]();
     //Converting Coordinate format to CSR
     for(idx_t i = 0; i < numOfVal; i++){
         csr_row[I[i] + 1]++;
@@ -94,31 +104,38 @@ int main(int argc, char *argv[]){
         csr_col[csr_row[I[i] + 1]] = J[i];
         csr_val[csr_row[I[i]+1]++] = val[i];
     }
-    free(I);
-    free(J);
-    free(val);
 
+    delete [] I;
+    delete [] J;
+    delete [] val;
 
-    idx_t part[*nVertices];
-
+    part = (idx_t *) std::malloc(*nVertices * sizeof(idx_t)); 
+    
     //Adding options
     idx_t options[METIS_NOPTIONS];
     METIS_SetDefaultOptions(options);
     options[METIS_OPTION_SEED] = 0;
 
+    if(objective == 1){
+        options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
+    }else if(objective == 2){
+        options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_VOL;
+    }
+
     int ret = METIS_PartGraphKway(nVertices, &nWeights, csr_row, csr_col,
 				       NULL, NULL, NULL, &nParts, NULL,
 				       NULL, options, &objval, part);
-    free(csr_col);
-    free(csr_row);
-    free(csr_val);
+
+    delete [] csr_val;
+    delete [] csr_row;
+    delete [] csr_col;
 
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
     
     //extracting the file name from the given path, and adjusting the output file.
     std::string fileName = returnFileName(filePath);
-    std::string partVectorName = fileName + "_part" + std::to_string(nParts) + ".txt";
+    std::string partVectorName = fileName +"_metis_"+objective_name+ "_part" + std::to_string(nParts) + ".txt";
 
     std::fstream partVectorFile;
     partVectorFile.open(partVectorName,std::ios::out);
@@ -129,6 +146,7 @@ int main(int argc, char *argv[]){
     for(unsigned part_i = 0; part_i < numOfRow; part_i++){
         partVectorFile<<part[part_i]<<std::endl;
     }
+    free(part);
     partVectorFile.close();
     
     return 0;
