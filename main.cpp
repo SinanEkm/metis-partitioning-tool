@@ -19,8 +19,8 @@
 //
 // Run with
 // ./run -i path/to/MMfile.mtx -k <PART NUMBER> -o <OBJ_TYPE>
-// OBJ_TYPE -> edge-cut for edge cut minimization
-//          -> volume for Total communication volume minimization
+// OBJ_TYPE -> edge-cut ->> edge cut minimization
+//          -> volume ->> Total communication volume minimization
 
 std::string returnFileName(std::string filePath);
 
@@ -33,6 +33,8 @@ int main(int argc, char *argv[]){
     idx_t nParts = 2; 
     int objective = 1;
     std::string objective_name = "";
+
+
     //Reading the input arguments, specifically matrix name and part number.
     if(argc < 2){
         fprintf(stderr, "Usage: ./run -i [MatrixMarket File path] -k [Partition Number]\nExample: ./run -i matrices/Stanford/Stanford.mtx -k 4\n");
@@ -65,12 +67,11 @@ int main(int argc, char *argv[]){
     idx_t nWeights  = 1;
     idx_t *nVertices;
     idx_t objval; 
-    idx_t numOfRow, numOfCol = 0, numOfVal = 0;
+    idx_t numOfRow = 0, numOfCol = 0, numOfVal = 0;
 
     nVertices = &numOfRow;
-    
-    idx_t *part;
-    
+
+
     //reading the matrix market file; I, J and, val pointers used to store values. 
     std::ifstream file(filePath);
 
@@ -92,6 +93,7 @@ int main(int argc, char *argv[]){
     idx_t* csr_col = new idx_t[numOfVal]();
     idx_t* csr_val = new idx_t[numOfVal]();
     idx_t* csr_row = new idx_t[numOfRow + 2]();
+
     //Converting Coordinate format to CSR
     for(idx_t i = 0; i < numOfVal; i++){
         csr_row[I[i] + 1]++;
@@ -109,7 +111,8 @@ int main(int argc, char *argv[]){
     delete [] J;
     delete [] val;
 
-    part = (idx_t *) std::malloc(*nVertices * sizeof(idx_t)); 
+
+    idx_t* part = new idx_t[*nVertices]();
     
     //Adding options
     idx_t options[METIS_NOPTIONS];
@@ -130,6 +133,7 @@ int main(int argc, char *argv[]){
     delete [] csr_row;
     delete [] csr_col;
 
+    //Measuring the execution time.
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
     auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
     
@@ -142,11 +146,12 @@ int main(int argc, char *argv[]){
 
     std::cout<<"Elapsed time for partitioning "<< fileName<<" is:"<< elapsedTime << "ms." << std::endl;
     
-    //Putting partitioned vector into a .txt file which is named matrixName_part[PARTNUMBER].TXT
+    //Putting partitioned vector into a .txt file
     for(unsigned part_i = 0; part_i < numOfRow; part_i++){
         partVectorFile<<part[part_i]<<std::endl;
     }
-    free(part);
+    
+    delete [] part;
     partVectorFile.close();
     
     return 0;
