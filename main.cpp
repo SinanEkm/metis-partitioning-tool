@@ -30,7 +30,7 @@ int main(int argc, char *argv[]){
     std::vector<std::string> arguments(argv, argv + argc); 
 
     std::string filePath = "";
-    idx_t nParts = 2; 
+    idx_t nParts = 16; 
     int objective = 1;
     std::string objective_name = "";
 
@@ -145,7 +145,7 @@ int main(int argc, char *argv[]){
     partVectorFile.open(partVectorName,std::ios::out);
 
     std::cout<<"Elapsed time for partitioning "<< fileName<<" is:"<< elapsedTime << "ms." << std::endl;
-    
+    std::cout<<(double)*nVertices/objval<<std::endl; 
     //Putting partitioned vector into a .txt file
     for(unsigned part_i = 0; part_i < numOfRow; part_i++){
         partVectorFile<<part[part_i]<<std::endl;
